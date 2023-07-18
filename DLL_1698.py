@@ -4,6 +4,7 @@ import snowflake.connector
 import pendulum
 import pandas as pd
 
+
 TODAY = pendulum.today()
 YESTERDAY = TODAY.subtract(days = 1) #
 f = open('snowflake_credentials.json')
@@ -13,25 +14,28 @@ LOGIN_EMAIL = data['gmail_address']
 LOGIN_PASSWORD = data['gmail_2fa_password']
 RECIEVER_LIST = ['ilin@integralads.com', 'ivanlin0418@gmail.com']
 
+SNOWFLAKE_USER = data['snowflake_user']
+SNOWFLAKE_PASSWORD = data['snowflake_password']
+SNOWFLAKE_REGION = data['snowflake_region']
+AUTHENTICATOR = data['authenticator']
+SNOWFLAKE_DATABASE = data['snowflake_database']
+SNOWFLAKE_WAREHOUSE = data['snowflake_warehouse']
+
+f.close()
+
 
 def get_Records():
     '''
     Checks the Snowflake database and check whether a new media type was added to aggregate
     '''
-
-    f = open('snowflake_credentials.json')
-    data = json.load(f)
-
     ctx = snowflake.connector.connect(
-        user= data['snowflake_user'],
-        password= data['snowflake_password'],
-        account = data['snowflake_region'],
-        authenticator= data['authenticator'],
-        database = data['snowflake_database'],
-        warehouse = data['snowflake_warehouse']
+        user= SNOWFLAKE_USER,
+        password= SNOWFLAKE_PASSWORD,
+        account = SNOWFLAKE_REGION,
+        authenticator= AUTHENTICATOR,
+        database = SNOWFLAKE_DATABASE,
+        warehouse = SNOWFLAKE_WAREHOUSE
     )
-
-    f.close()
 
     cs = ctx.cursor()
 
@@ -75,24 +79,22 @@ def get_Records():
 
 
 
-def check_Data():
+def check_Latest_Data():
 
     TODAY = pendulum.today()
-    YESTERDAY = TODAY.subtract(days = 1) #
-
-    f = open('snowflake_credentials.json')
-    data = json.load(f)
+    YESTERDAY = TODAY.subtract(days = 1) #use yesterday as the basis since that is the most recent data
 
     ctx = snowflake.connector.connect(
-        user= data['snowflake_user'],
-        password= data['snowflake_password'],
-        account = data['snowflake_region'],
-        authenticator= data['authenticator'],
-        database = data['snowflake_database'],
-        warehouse = data['snowflake_warehouse']
+        user= SNOWFLAKE_USER,
+        password= SNOWFLAKE_PASSWORD,
+        account = SNOWFLAKE_REGION,
+        authenticator= AUTHENTICATOR,
+        database = SNOWFLAKE_DATABASE,
+        warehouse = SNOWFLAKE_WAREHOUSE
     )
+
     cs = ctx.cursor()
-    f.close()
+
     cs.execute(
     """
     SELECT DISTINCT
@@ -129,18 +131,26 @@ def check_Data():
     """, (str(YESTERDAY)[:10], str(YESTERDAY)[:10], str(YESTERDAY)[:10], str(YESTERDAY)[:10],))
 
     tuple_array = [tuple(x) for x in cs.fetch_pandas_all().to_records(index=False)]
-    tuple_array.append((300, 1))
-    df = pd.read_csv('pairs.csv', header=None)
-    lst = set(df.iloc[:, 1].tolist())
+    # tuple_array.append((300, 1)) #should recieve a email for this one
+    # tuple_array.append((629, 212)) #shouldnt recieve a email and should be added to csv
+    # tuple_array.append((300, 1)) #shouldnt recieve a email at all.
 
     for values in tuple_array:
+        df = pd.read_csv('pairs.csv', header=None)
+        lst = set(df.iloc[:, 1].tolist())
         if values[1] not in lst:
             print (values[0], values[1])   
             send_Email(values[0], values[1]) 
+            with open('pairs.csv', mode='a') as filewriter:
+                filewriter.write("{},{}".format(values[0], values[1]))
+                filewriter.write("\n") 
 
-        
-def send_Email(Measurement_Source_ID, MediaType_ID ):
-    EMAIL_SUBJECT  = "Alert: New Media Type ID Detected"
+
+def send_Email(Measurement_Source_ID, MediaType_ID):
+    '''
+    Method is used to send the email to the recipents.
+    '''
+    EMAIL_SUBJECT  = "CRITICAL: New Media Type ID Detected"
 
     msg = f"""From: {LOGIN_EMAIL}\r\nTo: {", ".join(RECIEVER_LIST)}\r\nSubject: {EMAIL_SUBJECT}\r\n\r\n"""
     msg += f"New Media Type ID Detected. \nMedia Type ID: {MediaType_ID}\nMeasurement Source ID: {Measurement_Source_ID}"
@@ -154,4 +164,4 @@ def send_Email(Measurement_Source_ID, MediaType_ID ):
     server.quit()
 
 if __name__ == "__main__":
-    check_Data()
+    get_Records()
